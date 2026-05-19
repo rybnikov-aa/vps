@@ -261,7 +261,7 @@ if ! sudo grep -q '### BEGIN ocserv NAT rules' "${UFW_BEFORE_RULES}"; then
     fi
     
     # Сначала добавляем forward rules перед первым COMMIT (в таблицу filter)
-    sudo sed -i '/^COMMIT$/a\
+    sudo sed -i '/^COMMIT$/i\
 ### BEGIN ocserv forward rules\
 -A ufw-before-forward -s '"${OPENCONNECT_NETWORK}"' -j ACCEPT\
 -A ufw-before-forward -d '"${OPENCONNECT_NETWORK}"' -j ACCEPT\

@@ -18,6 +18,22 @@
 ✅ Комплексная валидация всех изменений  
 ✅ Информативный лог выполнения со справками
 
+## 🚀 Быстрый старт
+
+Запустите скрипт в одну строку:
+
+```bash
+bash <(curl -sSL https://raw.githubusercontent.com/rybnikov-aa/vps/main/vps_init.sh)
+```
+
+или с использованием `sudo`:
+
+```bash
+sudo bash <(curl -sSL https://raw.githubusercontent.com/rybnikov-aa/vps/main/vps_init.sh)
+```
+
+> **Замените URL** на адрес вашего репозитория перед использованием!
+
 ## Требования
 
 - Debian/Ubuntu сервер

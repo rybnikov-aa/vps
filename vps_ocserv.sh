@@ -14,8 +14,8 @@ UFW_BEFORE_RULES='/etc/ufw/before.rules'
 SYSCTL_CONF='/etc/sysctl.conf'
 VPN_PASSWD_FILE='/etc/ocserv/ocserv.passwd'
 OPENCONNECT_NETWORK='10.10.10.0/24'
-OPENCONNECT_NETWORK_IP='10.10.10.0'
-OPENCONNECT_NETWORK_MASK='255.255.255.0'
+OPENCONNECT_NETWORK_IP=''
+OPENCONNECT_NETWORK_MASK=''
 
 # Функции для вывода
 print_error() { printf "%b\n" "${RED}[ОШИБКА]${NC} $1"; }
@@ -42,37 +42,55 @@ prompt_secret() {
     fi
 }
 
-# Функция для замены или добавления параметра в ocserv.conf (без дублей)
-set_conf_param() {
-    local param="$1"
-    local value="$2"
+ip_to_int() {
+    local IFS=.
+    local a b c d
+    read -r a b c d <<< "$1"
+    printf '%u' "$(( (a << 24) | (b << 16) | (c << 8) | d ))"
+}
 
-    if [ ! -f "$OCSERV_CONF" ]; then
-        print_error "Файл $OCSERV_CONF не существует"
+int_to_ip() {
+    local int=$1
+    printf '%d.%d.%d.%d' "$(( (int >> 24) & 255 ))" "$(( (int >> 16) & 255 ))" "$(( (int >> 8) & 255 ))" "$(( int & 255 ))"
+}
+
+cidr_to_network_and_mask() {
+    local cidr=$1
+    if ! [[ $cidr =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}/([0-9]{1,2})$ ]]; then
         return 1
     fi
 
-    if [ ! -f "${OCSERV_CONF}.bak" ]; then
-        sudo cp "$OCSERV_CONF" "${OCSERV_CONF}.bak"
-        print_info "Создан бэкап ${OCSERV_CONF}.bak"
+    local ip=${cidr%/*}
+    local prefix=${cidr#*/}
+
+    IFS=. read -r o1 o2 o3 o4 <<< "$ip"
+    for octet in "$o1" "$o2" "$o3" "$o4"; do
+        if [ "$octet" -gt 255 ] 2>/dev/null || [ "$octet" -lt 0 ] 2>/dev/null; then
+            return 1
+        fi
+    done
+    if [ "$prefix" -lt 0 ] 2>/dev/null || [ "$prefix" -gt 32 ] 2>/dev/null; then
+        return 1
     fi
 
-    local escaped_value=$(printf '%s\n' "$value" | sed -e 's/[\/&]/\\&/g')
+    local ip_int
+    ip_int=$(ip_to_int "$ip")
 
-    # Удаляем ВСЕ вхождения этого параметра (закомментированные и активные)
-    sudo sed -i -E "/^[[:space:]]*#?[[:space:]]*${param}[[:space:]]*(=)?/d" "$OCSERV_CONF"
-    
-    # Добавляем новый параметр в конец файла (перед секцией vhost если есть)
-    if sudo grep -q "^\[vhost:" "$OCSERV_CONF"; then
-        local insert_line=$(sudo grep -n "^\[vhost:" "$OCSERV_CONF" | head -1 | cut -d: -f1)
-        insert_line=$((insert_line - 1))
-        sudo sed -i "${insert_line} a ${param} = ${escaped_value}" "$OCSERV_CONF"
-    else
-        sudo bash -c "printf '%s = %s\n' \"${param}\" \"${escaped_value}\" >> \"$OCSERV_CONF\""
+    local mask_int=0
+    if [ "$prefix" -gt 0 ]; then
+        for ((i = 0; i < prefix; i++)); do
+            mask_int=$(( (mask_int << 1) | 1 ))
+        done
+        mask_int=$(( mask_int << (32 - prefix) ))
     fi
-    
-    print_info "✓ Параметр ${param} установлен"
+
+    OPENCONNECT_NETWORK_IP=$(int_to_ip "$(( ip_int & mask_int ))")
+    OPENCONNECT_NETWORK_MASK=$(int_to_ip "$mask_int")
+    return 0
 }
+
+# URL готового конфига ocserv
+CONFIG_URL='https://raw.githubusercontent.com/rybnikov-aa/vps/main/ocserv.conf'
 
 # Функция для правильной настройки UFW before.rules
 setup_ufw_nat() {
@@ -164,6 +182,18 @@ if [ -z "${EMAIL}" ]; then
     exit 1
 fi
 
+prompt "Введите сеть OpenConnect [${OPENCONNECT_NETWORK}]: " USER_NETWORK
+if [ -n "${USER_NETWORK}" ]; then
+    OPENCONNECT_NETWORK="${USER_NETWORK}"
+fi
+if ! cidr_to_network_and_mask "${OPENCONNECT_NETWORK}"; then
+    print_error "Недопустимая сеть OpenConnect. Укажите в формате X.Y.Z.W/N, например 10.10.10.0/24"
+    exit 1
+fi
+print_info "OpenConnect сеть: ${OPENCONNECT_NETWORK}"
+print_info "OpenConnect IP: ${OPENCONNECT_NETWORK_IP}"
+print_info "OpenConnect mask: ${OPENCONNECT_NETWORK_MASK}"
+
 # Обновление и установка
 print_info "Обновление системы..."
 sudo apt update
@@ -214,38 +244,28 @@ fi
 
 print_success "Сертификаты успешно установлены"
 
-# Убеждаемся что файл ocserv.conf существует
-if [ ! -f "$OCSERV_CONF" ]; then
-    print_error "Файл $OCSERV_CONF не найден. Установите ocserv сначала."
-    exit 1
-fi
-
 # Настройка ocserv
 print_info "Настройка ocserv..."
 
-# Очистка старых параметров конфигурации
-print_info "Очистка старых параметров конфигурации..."
-sudo sed -i '/^[[:space:]]*auth[[:space:]]*=/d' "$OCSERV_CONF"
-sudo sed -i '/^[[:space:]]*route[[:space:]]*=/d' "$OCSERV_CONF"
-sudo sed -i '/^[[:space:]]*max-clients[[:space:]]*=/d' "$OCSERV_CONF"
-sudo sed -i '/^[[:space:]]*max-same-clients[[:space:]]*=/d' "$OCSERV_CONF"
+if [ -f "$OCSERV_CONF" ] && [ ! -f "${OCSERV_CONF}.bak" ]; then
+    sudo cp "$OCSERV_CONF" "${OCSERV_CONF}.bak"
+    print_info "Создан бэкап ${OCSERV_CONF}.bak"
+fi
 
-# Обновляем параметры
-set_conf_param "auth" "\"plain[passwd=${VPN_PASSWD_FILE}]\""
-set_conf_param "server-cert" "/etc/ocserv/certs/server-cert.pem"
-set_conf_param "server-key" "/etc/ocserv/certs/server-key.pem"
-set_conf_param "tcp-port" "443"
-set_conf_param "udp-port" "443"
-set_conf_param "max-clients" "16"
-set_conf_param "max-same-clients" "8"
-set_conf_param "keepalive" "32400"
-set_conf_param "dpd" "90"
-set_conf_param "mobile-dpd" "1800"
-set_conf_param "max-ban-score" "80"
-set_conf_param "ipv4-network" "${OPENCONNECT_NETWORK_IP}"
-set_conf_param "ipv4-netmask" "${OPENCONNECT_NETWORK_MASK}"
-set_conf_param "route" "default"
-set_conf_param "cisco-client-compat" "true"
+print_info "Загрузка готового конфига ocserv..."
+
+tmp_conf=$(mktemp)
+if ! curl -fsSL "$CONFIG_URL" -o "$tmp_conf"; then
+    print_error "Не удалось скачать конфиг ocserv из ${CONFIG_URL}"
+    rm -f "$tmp_conf"
+    exit 1
+fi
+
+sudo sed -e "s|{{OPENCONNECT_NETWORK_IP}}|${OPENCONNECT_NETWORK_IP}|g" \
+         -e "s|{{OPENCONNECT_NETWORK_MASK}}|${OPENCONNECT_NETWORK_MASK}|g" \
+    "$tmp_conf" | sudo tee "$OCSERV_CONF" > /dev/null
+rm -f "$tmp_conf"
+print_info "Конфиг ocserv установлен из шаблона"
 
 # Настройка sysctl
 print_info "Настройка IP forwarding..."

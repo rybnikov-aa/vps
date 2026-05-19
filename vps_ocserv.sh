@@ -259,15 +259,22 @@ if ! sudo grep -q '### BEGIN ocserv NAT rules' "${UFW_BEFORE_RULES}"; then
     else
         sudo touch "${UFW_BEFORE_RULES}"
     fi
+    
+    # Сначала добавляем forward rules перед первым COMMIT (в таблицу filter)
+    sudo sed -i '/^COMMIT$/a\
+### BEGIN ocserv forward rules\
+-A ufw-before-forward -s '"${OPENCONNECT_NETWORK}"' -j ACCEPT\
+-A ufw-before-forward -d '"${OPENCONNECT_NETWORK}"' -j ACCEPT\
+### END ocserv forward rules' "${UFW_BEFORE_RULES}"
+    
+    # Затем добавляем NAT правила в конец файла
     sudo tee -a "${UFW_BEFORE_RULES}" > /dev/null <<EOF
+
 ### BEGIN ocserv NAT rules
 *nat
 :POSTROUTING ACCEPT [0:0]
 -A POSTROUTING -s ${OPENCONNECT_NETWORK} -o ${INTERFACE} -j MASQUERADE
 COMMIT
-
--A ufw-before-forward -s ${OPENCONNECT_NETWORK} -j ACCEPT
--A ufw-before-forward -d ${OPENCONNECT_NETWORK} -j ACCEPT
 ### END ocserv NAT rules
 EOF
 fi

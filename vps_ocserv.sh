@@ -149,8 +149,7 @@ EOF
 
 # Проверка прав
 if [ "$EUID" -eq 0 ]; then
-    print_error "Не запускайте скрипт от root"
-    exit 1
+    print_info "Скрипт запущен от root — продолжу, но выполнение от root может быть небезопасным"
 fi
 
 if ! command -v sudo &> /dev/null; then

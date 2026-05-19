@@ -29,6 +29,26 @@ print_info() {
     printf "%b\n" "${YELLOW}[ИНФО]${NC} $1"
 }
 
+prompt() {
+    local prompt="$1"
+    shift
+    if [ -t 0 ]; then
+        read -rp "${prompt}" "$@"
+    else
+        read -rp "${prompt}" "$@" < /dev/tty
+    fi
+}
+
+prompt_secret() {
+    local prompt="$1"
+    shift
+    if [ -t 0 ]; then
+        read -rsp "${prompt}" "$@"
+    else
+        read -rsp "${prompt}" "$@" < /dev/tty
+    fi
+}
+
 # Проверка прав sudo
 if [ "$EUID" -eq 0 ]; then
     print_error "Не запускайте скрипт от root. Используйте пользователя с правами sudo"
@@ -43,7 +63,7 @@ fi
 
 # Запрос домена у пользователя
 printf '\n'
-read -rp "Введите доменное имя вашего VPS (например, vpn.example.com): " DOMAIN
+prompt "Введите доменное имя вашего VPS (например, vpn.example.com): " DOMAIN
 
 if [ -z "${DOMAIN}" ]; then
     print_error "Домен не может быть пустым"
@@ -53,7 +73,7 @@ fi
 print_info "Начинаем установку OpenConnect для домена: ${DOMAIN}"
 
 # Запрос email для Let's Encrypt
-read -rp "Введите email для Let's Encrypt (для уведомлений): " EMAIL
+prompt "Введите email для Let's Encrypt (для уведомлений): " EMAIL
 
 if [ -z "${EMAIL}" ]; then
     print_info "Email не указан. acme.sh может запросить его позже."
@@ -208,12 +228,12 @@ sudo systemctl restart ufw
 
 # Создание тестового пользователя
 print_info "Создание пользователя VPN..."
-read -rp "Введите имя пользователя VPN: " VPN_USER
+prompt "Введите имя пользователя VPN: " VPN_USER
 
 if [ -n "${VPN_USER}" ]; then
-    read -rsp "Введите пароль для ${VPN_USER}: " VPN_PASS
+    prompt_secret "Введите пароль для ${VPN_USER}: " VPN_PASS
     printf '\n'
-    read -rsp "Подтвердите пароль: " VPN_PASS_CONFIRM
+    prompt_secret "Подтвердите пароль: " VPN_PASS_CONFIRM
     printf '\n'
 
     if [ "${VPN_PASS}" = "${VPN_PASS_CONFIRM}" ] && [ -n "${VPN_PASS}" ]; then

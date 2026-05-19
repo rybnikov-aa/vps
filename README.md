@@ -26,13 +26,13 @@
 bash <(curl -sSL https://raw.githubusercontent.com/rybnikov-aa/vps/main/vps_init.sh)
 ```
 
-Или, если требуется `sudo` для запуска из конвейера:
+Если у вас нет прямого доступа к `bash <(...)`, можно использовать конвейер от обычного пользователя:
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/rybnikov-aa/vps/main/vps_init.sh | sudo bash
+curl -sSL https://raw.githubusercontent.com/rybnikov-aa/vps/main/vps_init.sh | bash
 ```
 
-Прямая команда `sudo bash <(curl -sSL ...)` может не сработать на некоторых системах из-за отсутствия доступа к `/dev/fd/...`.
+Скрипт сам вызовет `sudo` где это нужно, поэтому запускать его уже от `root` не требуется.
 
 Для быстрого запуска скрипта `vps_ocserv.sh` используйте:
 
@@ -40,13 +40,13 @@ curl -sSL https://raw.githubusercontent.com/rybnikov-aa/vps/main/vps_init.sh | s
 bash <(curl -sSL https://raw.githubusercontent.com/rybnikov-aa/vps/main/vps_ocserv.sh)
 ```
 
-Если нужно запустить через `sudo`, используйте безопасную форму с конвейером:
+Или, если необходимо, запустите через конвейер от обычного пользователя:
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/rybnikov-aa/vps/main/vps_ocserv.sh | sudo bash
+curl -sSL https://raw.githubusercontent.com/rybnikov-aa/vps/main/vps_ocserv.sh | bash
 ```
 
-Прямая команда `sudo bash <(curl -sSL ...)` может выдать ошибку `/dev/fd/...: No such file or directory` на некоторых системах.
+Скрипт сам вызовет `sudo` где это нужно, поэтому запускать его напрямую от `root` не требуется.
 
 > **Замените URL** на адрес вашего репозитория перед использованием!
 

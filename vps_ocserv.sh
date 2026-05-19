@@ -126,8 +126,8 @@ if [ -f "${LIVE_DIR}/cert.pem" ] && [ -f "${LIVE_DIR}/privkey.pem" ] && [ -f "${
 else
     print_info "Сертификаты по ожидаемому пути не найдены, ищем существующий сертификат через certbot..."
     CERT_NAME=$(sudo certbot certificates 2>/dev/null | awk -v d="${DOMAIN}" '
-        /^Certificate Name:/ {name=$3}
-        /^Domains:/ { if ($0 ~ d) print name }
+        /^[[:space:]]*Certificate Name:/ {name=$3}
+        /^[[:space:]]*Domains:/ { if ($0 ~ d) print name }
     ' | head -n1)
     if [ -n "${CERT_NAME}" ] && [ -d "/etc/letsencrypt/live/${CERT_NAME}" ]; then
         print_info "Найден сертификат '${CERT_NAME}', используем /etc/letsencrypt/live/${CERT_NAME}"

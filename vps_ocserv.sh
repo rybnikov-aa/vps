@@ -110,11 +110,17 @@ sudo apt install -y ocserv ufw curl ca-certificates certbot
 # Проверка наличия необходимых команд после установки
 # У некоторых команд бинарники лежат в /usr/sbin и не видны в PATH обычного пользователя,
 # поэтому пробуем проверить их как текущим пользователем, так и через sudo (root PATH).
+# Проверяем доступность команд: локально и через sudo (включая /usr/sbin)
 for cmd in ocpasswd ufw certbot systemctl ip; do
-    if ! command -v "$cmd" >/dev/null 2>&1 && ! sudo command -v "$cmd" >/dev/null 2>&1; then
-        print_error "Требуемая команда '$cmd' не найдена после установки. Убедитесь, что пакеты установлены корректно."
-        exit 1
+    if command -v "$cmd" >/dev/null 2>&1; then
+        continue
     fi
+    # Проверяем через sudo в shell, т.к. 'command' — это shell-builtin
+    if sudo bash -lc "command -v '$cmd' >/dev/null 2>&1"; then
+        continue
+    fi
+    print_error "Требуемая команда '$cmd' не найдена после установки. Убедитесь, что пакеты установлены корректно."
+    exit 1
 done
 
 # Остановка сервисов, которые могут занимать порт 80/443

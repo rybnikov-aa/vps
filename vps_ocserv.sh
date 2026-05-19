@@ -121,10 +121,13 @@ fi
 
 # Проверяем, что сертификаты действительно созданы или ищем существующий сертификат
 LIVE_DIR="/etc/letsencrypt/live/${DOMAIN}"
-if [ -f "${LIVE_DIR}/cert.pem" ] && [ -f "${LIVE_DIR}/privkey.pem" ] && [ -f "${LIVE_DIR}/fullchain.pem" ]; then
+print_info "Проверяем сертификаты в каталоге: ${LIVE_DIR}"
+print_info "Ожидаемые файлы: ${LIVE_DIR}/cert.pem, ${LIVE_DIR}/privkey.pem, ${LIVE_DIR}/fullchain.pem"
+if sudo test -f "${LIVE_DIR}/cert.pem" && sudo test -f "${LIVE_DIR}/privkey.pem" && sudo test -f "${LIVE_DIR}/fullchain.pem"; then
     :
 else
     print_info "Сертификаты по ожидаемому пути не найдены, ищем существующий сертификат через certbot..."
+    print_info "Будем искать в каталоге /etc/letsencrypt/live/*"
     CERT_NAME=$(sudo certbot certificates 2>/dev/null | awk -v d="${DOMAIN}" '
         /^[[:space:]]*Certificate Name:/ {name=$3}
         /^[[:space:]]*Domains:/ { if ($0 ~ d) print name }
@@ -133,7 +136,7 @@ else
         print_info "Найден сертификат '${CERT_NAME}', используем /etc/letsencrypt/live/${CERT_NAME}"
         LIVE_DIR="/etc/letsencrypt/live/${CERT_NAME}"
     fi
-    if [ ! -f "${LIVE_DIR}/cert.pem" ] || [ ! -f "${LIVE_DIR}/privkey.pem" ] || [ ! -f "${LIVE_DIR}/fullchain.pem" ]; then
+    if ! sudo test -f "${LIVE_DIR}/cert.pem" || ! sudo test -f "${LIVE_DIR}/privkey.pem" || ! sudo test -f "${LIVE_DIR}/fullchain.pem"; then
         print_error "Файл сертификата ${LIVE_DIR}/cert.pem не найден"
         exit 1
     fi

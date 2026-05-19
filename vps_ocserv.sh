@@ -68,6 +68,27 @@ if [ -z "${DOMAIN}" ]; then
     exit 1
 fi
 
+# Санитизация и валидация введённого домена
+DOMAIN="$(printf '%s' "${DOMAIN}" | tr -d '\r')"
+# Удаляем UTF-8 BOM если есть
+DOMAIN="${DOMAIN//$'\xef\xbb\xbf'/}"
+# Обрезаем пробелы
+DOMAIN="$(printf '%s' "${DOMAIN}" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+# Приводим к нижнему регистру
+DOMAIN="$(printf '%s' "${DOMAIN}" | tr '[:upper:]' '[:lower:]')"
+# Удаляем недопустимые символы, оставляем только a-z0-9.-
+CLEAN_DOMAIN="$(printf '%s' "${DOMAIN}" | sed 's/[^a-z0-9.-]//g')"
+if [ "${CLEAN_DOMAIN}" != "${DOMAIN}" ]; then
+    print_info "Санитизация доменного имени: '${DOMAIN}' -> '${CLEAN_DOMAIN}'"
+    DOMAIN="${CLEAN_DOMAIN}"
+fi
+
+# Простейшая валидация: должен начинаться и заканчиваться на букву/цифру
+if ! [[ "${DOMAIN}" =~ ^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$ ]]; then
+    print_error "Недопустимое доменное имя: ${DOMAIN}"
+    exit 1
+fi
+
 print_info "Начинаем установку OpenConnect для домена: ${DOMAIN}"
 
 # Запрос email для Let's Encrypt

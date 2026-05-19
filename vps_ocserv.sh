@@ -11,9 +11,11 @@ NC='\033[0m' # No Color
 # Пути и параметры
 OCSERV_CONF='/etc/ocserv/ocserv.conf'
 UFW_BEFORE_RULES='/etc/ufw/before.rules'
-SYSCTL_CONF='/etc/sysctl.d/99-ocserv.conf'
+SYSCTL_CONF='/etc/sysctl.conf'
 VPN_PASSWD_FILE='/etc/ocserv/ocserv.passwd'
 OPENCONNECT_NETWORK='10.10.10.0/24'
+OPENCONNECT_NETWORK_IP='10.10.10.0'
+OPENCONNECT_NETWORK_MASK='255.255.255.0'
 
 # Функции для вывода
 print_error() { printf "%b\n" "${RED}[ОШИБКА]${NC} $1"; }
@@ -40,31 +42,29 @@ prompt_secret() {
     fi
 }
 
-# Функция для изменения параметра в ocserv.conf
-update_ocserv_param() {
-    local param_name="$1"
-    local param_value="$2"
-    
+# Функция для замены или добавления параметра в ocserv.conf
+set_conf_param() {
+    local param="$1"
+    local value="$2"
+
     if [ ! -f "$OCSERV_CONF" ]; then
         print_error "Файл $OCSERV_CONF не существует"
         return 1
     fi
-    
+
     if [ ! -f "${OCSERV_CONF}.bak" ]; then
         sudo cp "$OCSERV_CONF" "${OCSERV_CONF}.bak"
         print_info "Создан бэкап ${OCSERV_CONF}.bak"
     fi
-    
-    local escaped_value=$(printf '%s\n' "$param_value" | sed -e 's/[\/&]/\\&/g')
-    
-    if sudo grep -q "^[[:space:]]*#\{0,\}[[:space:]]*${param_name}[[:space:]]*=" "$OCSERV_CONF"; then
-        sudo sed -i -E "s/^([[:space:]]*#\{0,\}[[:space:]]*)${param_name}[[:space:]]*=[[:space:]]*.*/${param_name} = ${escaped_value}/" "$OCSERV_CONF"
-        print_info "✓ Параметр ${param_name} обновлен"
-    elif sudo grep -q "^[[:space:]]*#\{0,\}[[:space:]]*${param_name}[[:space:]]" "$OCSERV_CONF"; then
-        sudo sed -i -E "s/^([[:space:]]*#\{0,\}[[:space:]]*)${param_name}[[:space:]]+.*/${param_name} = ${escaped_value}/" "$OCSERV_CONF"
-        print_info "✓ Параметр ${param_name} обновлен"
+
+    local escaped_value=$(printf '%s\n' "$value" | sed -e 's/[\/&]/\\&/g')
+
+    if sudo grep -qE "^[[:space:]]*#?[[:space:]]*${param}[[:space:]]*(=)?[[:space:]]+" "$OCSERV_CONF"; then
+        sudo sed -i -E "s|^[[:space:]]*#?[[:space:]]*${param}[[:space:]]*(=)?[[:space:]]+.*|${param} = ${escaped_value}|" "$OCSERV_CONF"
+        print_info "✓ Параметр ${param} обновлен"
     else
-        print_info "⚠ Параметр ${param_name} не найден (пропускаем)"
+        sudo bash -c "printf '%s = %s\n' \"${param}\" \"${escaped_value}\" >> \"$OCSERV_CONF\""
+        print_info "✓ Параметр ${param} добавлен"
     fi
 }
 
@@ -205,21 +205,21 @@ fi
 print_info "Настройка ocserv..."
 
 # Обновляем параметры
-update_ocserv_param "auth" "\"plain[passwd=/etc/ocserv/ocserv.passwd]\""
-update_ocserv_param "server-cert" "/etc/ocserv/certs/server-cert.pem"
-update_ocserv_param "server-key" "/etc/ocserv/certs/server-key.pem"
-update_ocserv_param "tcp-port" "443"
-update_ocserv_param "udp-port" "443"
-update_ocserv_param "max-clients" "16"
-update_ocserv_param "max-same-clients" "8"
-update_ocserv_param "keepalive" "32400"
-update_ocserv_param "dpd" "90"
-update_ocserv_param "mobile-dpd" "1800"
-update_ocserv_param "max-ban-score" "80"
-update_ocserv_param "ipv4-network" "10.10.10.0"
-update_ocserv_param "ipv4-netmask" "255.255.255.0"
-update_ocserv_param "route" "default"
-update_ocserv_param "cisco-client-compat" "true"
+set_conf_param "auth" "\"plain[passwd=${VPN_PASSWD_FILE}]\""
+set_conf_param "server-cert" "/etc/ocserv/certs/server-cert.pem"
+set_conf_param "server-key" "/etc/ocserv/certs/server-key.pem"
+set_conf_param "tcp-port" "443"
+set_conf_param "udp-port" "443"
+set_conf_param "max-clients" "16"
+set_conf_param "max-same-clients" "8"
+set_conf_param "keepalive" "32400"
+set_conf_param "dpd" "90"
+set_conf_param "mobile-dpd" "1800"
+set_conf_param "max-ban-score" "80"
+set_conf_param "ipv4-network" "${OPENCONNECT_NETWORK_IP}"
+set_conf_param "ipv4-netmask" "${OPENCONNECT_NETWORK_MASK}"
+set_conf_param "route" "default"
+set_conf_param "cisco-client-compat" "true"
 
 # Настройка sysctl
 print_info "Настройка IP forwarding..."

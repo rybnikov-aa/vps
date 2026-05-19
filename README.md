@@ -20,7 +20,7 @@
 
 ## 🚀 Быстрый старт
 
-Запустите скрипт в одну строку:
+Запустите `vps_init.sh` в одну строку:
 
 ```bash
 bash <(curl -sSL https://raw.githubusercontent.com/rybnikov-aa/vps/main/vps_init.sh)
@@ -30,6 +30,18 @@ bash <(curl -sSL https://raw.githubusercontent.com/rybnikov-aa/vps/main/vps_init
 
 ```bash
 sudo bash <(curl -sSL https://raw.githubusercontent.com/rybnikov-aa/vps/main/vps_init.sh)
+```
+
+Для быстрого запуска скрипта `vps_ocserv.sh` используйте:
+
+```bash
+bash <(curl -sSL https://raw.githubusercontent.com/rybnikov-aa/vps/main/vps_ocserv.sh)
+```
+
+или с `sudo`:
+
+```bash
+sudo bash <(curl -sSL https://raw.githubusercontent.com/rybnikov-aa/vps/main/vps_ocserv.sh)
 ```
 
 > **Замените URL** на адрес вашего репозитория перед использованием!

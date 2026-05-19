@@ -26,29 +26,11 @@
 bash <(curl -sSL https://raw.githubusercontent.com/rybnikov-aa/vps/main/vps_init.sh)
 ```
 
-Если у вас нет прямого доступа к `bash <(...)`, можно использовать конвейер от обычного пользователя:
-
-```bash
-curl -sSL https://raw.githubusercontent.com/rybnikov-aa/vps/main/vps_init.sh | bash
-```
-
-Скрипт сам вызовет `sudo` где это нужно, поэтому запускать его уже от `root` не требуется.
-
 Для быстрого запуска скрипта `vps_ocserv.sh` используйте:
 
 ```bash
 bash <(curl -sSL https://raw.githubusercontent.com/rybnikov-aa/vps/main/vps_ocserv.sh)
 ```
-
-Или, если необходимо, запустите через конвейер от обычного пользователя:
-
-```bash
-curl -sSL https://raw.githubusercontent.com/rybnikov-aa/vps/main/vps_ocserv.sh | bash
-```
-
-Скрипт сам вызовет `sudo` где это нужно, поэтому запускать его напрямую от `root` не требуется.
-
-> **Замените URL** на адрес вашего репозитория перед использованием!
 
 ## Требования
 

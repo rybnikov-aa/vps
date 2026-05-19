@@ -26,11 +26,13 @@
 bash <(curl -sSL https://raw.githubusercontent.com/rybnikov-aa/vps/main/vps_init.sh)
 ```
 
-или с использованием `sudo`:
+Или, если требуется `sudo` для запуска из конвейера:
 
 ```bash
-sudo bash <(curl -sSL https://raw.githubusercontent.com/rybnikov-aa/vps/main/vps_init.sh)
+curl -sSL https://raw.githubusercontent.com/rybnikov-aa/vps/main/vps_init.sh | sudo bash
 ```
+
+Прямая команда `sudo bash <(curl -sSL ...)` может не сработать на некоторых системах из-за отсутствия доступа к `/dev/fd/...`.
 
 Для быстрого запуска скрипта `vps_ocserv.sh` используйте:
 
@@ -38,11 +40,13 @@ sudo bash <(curl -sSL https://raw.githubusercontent.com/rybnikov-aa/vps/main/vps
 bash <(curl -sSL https://raw.githubusercontent.com/rybnikov-aa/vps/main/vps_ocserv.sh)
 ```
 
-или с `sudo`:
+Если нужно запустить через `sudo`, используйте безопасную форму с конвейером:
 
 ```bash
-sudo bash <(curl -sSL https://raw.githubusercontent.com/rybnikov-aa/vps/main/vps_ocserv.sh)
+curl -sSL https://raw.githubusercontent.com/rybnikov-aa/vps/main/vps_ocserv.sh | sudo bash
 ```
+
+Прямая команда `sudo bash <(curl -sSL ...)` может выдать ошибку `/dev/fd/...: No such file or directory` на некоторых системах.
 
 > **Замените URL** на адрес вашего репозитория перед использованием!
 

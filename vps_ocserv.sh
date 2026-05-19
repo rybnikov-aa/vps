@@ -119,22 +119,34 @@ if ! sudo certbot certonly --standalone --preferred-challenges http --agree-tos 
     exit 1
 fi
 
-# Проверяем, что сертификаты действительно созданы
-for f in cert.pem privkey.pem fullchain.pem; do
-    if [ ! -f "/etc/letsencrypt/live/${DOMAIN}/${f}" ]; then
-        print_error "Файл сертификата /etc/letsencrypt/live/${DOMAIN}/${f} не найден"
+# Проверяем, что сертификаты действительно созданы или ищем существующий сертификат
+LIVE_DIR="/etc/letsencrypt/live/${DOMAIN}"
+if [ -f "${LIVE_DIR}/cert.pem" ] && [ -f "${LIVE_DIR}/privkey.pem" ] && [ -f "${LIVE_DIR}/fullchain.pem" ]; then
+    :
+else
+    print_info "Сертификаты по ожидаемому пути не найдены, ищем существующий сертификат через certbot..."
+    CERT_NAME=$(sudo certbot certificates 2>/dev/null | awk -v d="${DOMAIN}" '
+        /^Certificate Name:/ {name=$3}
+        /^Domains:/ { if ($0 ~ d) print name }
+    ' | head -n1)
+    if [ -n "${CERT_NAME}" ] && [ -d "/etc/letsencrypt/live/${CERT_NAME}" ]; then
+        print_info "Найден сертификат '${CERT_NAME}', используем /etc/letsencrypt/live/${CERT_NAME}"
+        LIVE_DIR="/etc/letsencrypt/live/${CERT_NAME}"
+    fi
+    if [ ! -f "${LIVE_DIR}/cert.pem" ] || [ ! -f "${LIVE_DIR}/privkey.pem" ] || [ ! -f "${LIVE_DIR}/fullchain.pem" ]; then
+        print_error "Файл сертификата ${LIVE_DIR}/cert.pem не найден"
         exit 1
     fi
-done
+fi
 
 # Создание директории для сертификатов
 sudo install -d -m 755 /etc/ocserv/certs
 
 # Копирование сертификатов в директорию ocserv
 print_info "Установка сертификатов..."
-sudo cp "/etc/letsencrypt/live/${DOMAIN}/cert.pem" /etc/ocserv/certs/cert.pem
-sudo cp "/etc/letsencrypt/live/${DOMAIN}/privkey.pem" /etc/ocserv/certs/key.pem
-sudo cp "/etc/letsencrypt/live/${DOMAIN}/fullchain.pem" /etc/ocserv/certs/fullchain.pem
+sudo cp "${LIVE_DIR}/cert.pem" /etc/ocserv/certs/cert.pem
+sudo cp "${LIVE_DIR}/privkey.pem" /etc/ocserv/certs/key.pem
+sudo cp "${LIVE_DIR}/fullchain.pem" /etc/ocserv/certs/fullchain.pem
 
 # Настройка прав доступа к сертификатам
 sudo chmod 644 /etc/ocserv/certs/cert.pem

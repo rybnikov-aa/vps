@@ -40,8 +40,7 @@ prompt_secret() {
     fi
 }
 
-# Функция для изменения параметра в конфигурационном файле
-# Раскомментирует и изменит значение, не трогая остальные строки
+# Функция для изменения параметра в ocserv.conf
 update_ocserv_param() {
     local param_name="$1"
     local param_value="$2"
@@ -51,44 +50,82 @@ update_ocserv_param() {
         return 1
     fi
     
-    # Создаем бэкап только если его нет
     if [ ! -f "${OCSERV_CONF}.bak" ]; then
         sudo cp "$OCSERV_CONF" "${OCSERV_CONF}.bak"
         print_info "Создан бэкап ${OCSERV_CONF}.bak"
     fi
     
-    # Экранируем спецсимволы для sed
     local escaped_value=$(printf '%s\n' "$param_value" | sed -e 's/[\/&]/\\&/g')
     
-    # Проверяем наличие параметра (закомментированного или нет)
     if sudo grep -q "^[[:space:]]*#\{0,\}[[:space:]]*${param_name}[[:space:]]*=" "$OCSERV_CONF"; then
-        # Параметр существует - раскомментируем и обновим значение
         sudo sed -i -E "s/^([[:space:]]*#\{0,\}[[:space:]]*)${param_name}[[:space:]]*=[[:space:]]*.*/${param_name} = ${escaped_value}/" "$OCSERV_CONF"
         print_info "✓ Параметр ${param_name} обновлен"
     elif sudo grep -q "^[[:space:]]*#\{0,\}[[:space:]]*${param_name}[[:space:]]" "$OCSERV_CONF"; then
-        # Параметр без знака = 
         sudo sed -i -E "s/^([[:space:]]*#\{0,\}[[:space:]]*)${param_name}[[:space:]]+.*/${param_name} = ${escaped_value}/" "$OCSERV_CONF"
         print_info "✓ Параметр ${param_name} обновлен"
     else
-        print_info "⚠ Параметр ${param_name} не найден в конфигурации (пропускаем)"
+        print_info "⚠ Параметр ${param_name} не найден (пропускаем)"
     fi
 }
 
-# Функция для добавления параметра если его нет
-add_ocserv_param_if_missing() {
-    local param_name="$1"
-    local param_value="$2"
+# Функция для правильной настройки UFW before.rules
+setup_ufw_nat() {
+    local interface="$1"
+    local network="$2"
     
-    if ! sudo grep -q "^[[:space:]]*${param_name}[[:space:]]*=" "$OCSERV_CONF" && \
-       ! sudo grep -q "^[[:space:]]*${param_name}[[:space:]]" "$OCSERV_CONF"; then
-        echo "${param_name} = ${param_value}" | sudo tee -a "$OCSERV_CONF" > /dev/null
-        print_info "✓ Добавлен параметр ${param_name}"
+    if [ ! -f "$UFW_BEFORE_RULES" ]; then
+        print_error "Файл $UFW_BEFORE_RULES не существует"
+        return 1
     fi
+    
+    # Создаем бэкап
+    if [ ! -f "${UFW_BEFORE_RULES}.bak" ]; then
+        sudo cp "$UFW_BEFORE_RULES" "${UFW_BEFORE_RULES}.bak"
+        print_info "Создан бэкап ${UFW_BEFORE_RULES}.bak"
+    fi
+    
+    # Удаляем предыдущие добавленные правила если они есть
+    sudo sed -i '/### BEGIN ocserv forward rules/,/### END ocserv forward rules/d' "$UFW_BEFORE_RULES"
+    sudo sed -i '/### BEGIN ocserv NAT rules/,/### END ocserv NAT rules/d' "$UFW_BEFORE_RULES"
+    
+    # Создаем временный файл с правильной структурой
+    local temp_file=$(mktemp)
+    
+    # Копируем содержимое до первого COMMIT (секция filter)
+    sudo awk '/^COMMIT$/ {exit} {print}' "$UFW_BEFORE_RULES" > "$temp_file"
+    
+    # Добавляем forward rules перед COMMIT
+    cat >> "$temp_file" << EOF
+
+### BEGIN ocserv forward rules
+-A ufw-before-forward -s ${network} -j ACCEPT
+-A ufw-before-forward -d ${network} -j ACCEPT
+### END ocserv forward rules
+
+COMMIT
+EOF
+    
+    # Добавляем секцию nat ПОСЛЕ filter (как требует UFW)
+    cat >> "$temp_file" << EOF
+
+### BEGIN ocserv NAT rules
+*nat
+:POSTROUTING ACCEPT [0:0]
+-A POSTROUTING -s ${network} -o ${interface} -j MASQUERADE
+COMMIT
+### END ocserv NAT rules
+EOF
+    
+    # Копируем обратно
+    sudo cp "$temp_file" "$UFW_BEFORE_RULES"
+    rm -f "$temp_file"
+    
+    print_info "✓ Правила UFW настроены корректно"
 }
 
 # Проверка прав
 if [ "$EUID" -eq 0 ]; then
-    print_error "Не запускайте скрипт от root. Используйте пользователя с правами sudo"
+    print_error "Не запускайте скрипт от root"
     exit 1
 fi
 
@@ -99,25 +136,21 @@ fi
 
 # Запрос домена
 printf '\n'
-prompt "Введите доменное имя вашего VPS (например, vpn.example.com): " DOMAIN
+prompt "Введите доменное имя вашего VPS: " DOMAIN
 
 if [ -z "${DOMAIN}" ]; then
     print_error "Домен не может быть пустым"
     exit 1
 fi
 
-# Санитизация домена
-DOMAIN="$(printf '%s' "${DOMAIN}" | tr -d '\r')"
-DOMAIN="${DOMAIN//$'\xef\xbb\xbf'/}"
-DOMAIN="$(printf '%s' "${DOMAIN}" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
-DOMAIN="$(printf '%s' "${DOMAIN}" | tr '[:upper:]' '[:lower:]')"
+DOMAIN="$(printf '%s' "${DOMAIN}" | tr -d '\r' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' | tr '[:upper:]' '[:lower:]')"
 
 if ! [[ "${DOMAIN}" =~ ^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$ ]]; then
-    print_error "Недопустимое доменное имя: ${DOMAIN}"
+    print_error "Недопустимое доменное имя"
     exit 1
 fi
 
-print_info "Начинаем настройку OpenConnect для домена: ${DOMAIN}"
+print_info "Настройка OpenConnect для домена: ${DOMAIN}"
 
 prompt "Введите email для Let's Encrypt: " EMAIL
 if [ -z "${EMAIL}" ]; then
@@ -138,7 +171,7 @@ sudo systemctl stop nginx apache2 2>/dev/null || true
 sudo systemctl stop ocserv 2>/dev/null || true
 
 # Получение сертификата
-print_info "Получение SSL сертификата для ${DOMAIN}..."
+print_info "Получение SSL сертификата..."
 if ! sudo certbot certonly --standalone --preferred-challenges http --agree-tos --email "${EMAIL}" -d "${DOMAIN}" --non-interactive; then
     print_error "Ошибка получения сертификата"
     exit 1
@@ -162,10 +195,16 @@ sudo chmod 644 /etc/ocserv/certs/server-cert.pem
 sudo chmod 640 /etc/ocserv/certs/server-key.pem
 sudo chown root:ssl-cert /etc/ocserv/certs/server-key.pem
 
-# НАСТРОЙКА OCSERV - только изменение существующих параметров
-print_info "Настройка ocserv (обновление параметров)..."
+# Убеждаемся что файл ocserv.conf существует
+if [ ! -f "$OCSERV_CONF" ]; then
+    print_error "Файл $OCSERV_CONF не найден. Установите ocserv сначала."
+    exit 1
+fi
 
-# Обновляем только те параметры, которые уже есть в конфиге
+# Настройка ocserv
+print_info "Настройка ocserv..."
+
+# Обновляем параметры
 update_ocserv_param "auth" "\"plain[passwd=/etc/ocserv/ocserv.passwd]\""
 update_ocserv_param "server-cert" "/etc/ocserv/certs/server-cert.pem"
 update_ocserv_param "server-key" "/etc/ocserv/certs/server-key.pem"
@@ -173,46 +212,14 @@ update_ocserv_param "tcp-port" "443"
 update_ocserv_param "udp-port" "443"
 update_ocserv_param "max-clients" "16"
 update_ocserv_param "max-same-clients" "8"
-update_ocserv_param "compression" "true"
-update_ocserv_param "no-compress-limit" "256"
 update_ocserv_param "keepalive" "32400"
 update_ocserv_param "dpd" "90"
 update_ocserv_param "mobile-dpd" "1800"
 update_ocserv_param "max-ban-score" "80"
-update_ocserv_param "ban-reset-time" "1200"
 update_ocserv_param "ipv4-network" "10.10.10.0"
 update_ocserv_param "ipv4-netmask" "255.255.255.0"
-update_ocserv_param "tunnel-all-dns" "true"
 update_ocserv_param "route" "default"
 update_ocserv_param "cisco-client-compat" "true"
-update_ocserv_param "isolate-workers" "true"
-
-# Добавляем DNS сервера
-for dns in "8.8.8.8" "8.8.4.4" "1.1.1.1" "9.9.9.9"; do
-    if ! sudo grep -q "^dns = ${dns}$" "$OCSERV_CONF"; then
-        # Если нет ни одного DNS, добавляем
-        if ! sudo grep -q "^dns =" "$OCSERV_CONF"; then
-            echo "dns = ${dns}" | sudo tee -a "$OCSERV_CONF" > /dev/null
-        fi
-    fi
-done
-
-# Проверяем наличие критических параметров
-add_ocserv_param_if_missing "socket-file" "/run/ocserv-socket"
-add_ocserv_param_if_missing "run-as-user" "ocserv"
-add_ocserv_param_if_missing "run-as-group" "ocserv"
-add_ocserv_param_if_missing "pid-file" "/run/ocserv.pid"
-add_ocserv_param_if_missing "device" "vpns"
-add_ocserv_param_if_missing "predictable-ips" "true"
-add_ocserv_param_if_missing "auth-timeout" "240"
-add_ocserv_param_if_missing "min-reauth-time" "300"
-add_ocserv_param_if_missing "cookie-timeout" "300"
-add_ocserv_param_if_missing "deny-roaming" "false"
-add_ocserv_param_if_missing "rekey-time" "172800"
-add_ocserv_param_if_missing "rekey-method" "ssl"
-add_ocserv_param_if_missing "use-occtl" "true"
-add_ocserv_param_if_missing "log-level" "1"
-add_ocserv_param_if_missing "rate-limit-ms" "100"
 
 # Настройка sysctl
 print_info "Настройка IP forwarding..."
@@ -228,6 +235,7 @@ sudo sysctl -p "$SYSCTL_CONF" 2>/dev/null || sudo sysctl --system
 # Настройка UFW
 print_info "Настройка файрвола UFW..."
 
+# Определяем интерфейс
 INTERFACE=$(ip route 2>/dev/null | awk '/^default/ {print $5; exit}')
 [ -z "${INTERFACE}" ] && INTERFACE=$(ip link show | grep -oP '^[0-9]+: \K[^:]+' | head -1)
 print_info "Сетевой интерфейс: ${INTERFACE}"
@@ -238,35 +246,22 @@ sudo ufw allow 80/tcp comment 'HTTP' 2>/dev/null || true
 sudo ufw allow 443/tcp comment 'HTTPS' 2>/dev/null || true
 sudo ufw allow 443/udp comment 'OpenConnect UDP' 2>/dev/null || true
 
-# Настройка NAT
-if [ -f "$UFW_BEFORE_RULES" ]; then
-    [ ! -f "${UFW_BEFORE_RULES}.bak" ] && sudo cp "$UFW_BEFORE_RULES" "${UFW_BEFORE_RULES}.bak"
-    
-    if ! sudo grep -q "### BEGIN ocserv forward rules" "$UFW_BEFORE_RULES"; then
-        sudo sed -i "/^COMMIT$/i\\
-### BEGIN ocserv forward rules\\
--A ufw-before-forward -s ${OPENCONNECT_NETWORK} -j ACCEPT\\
--A ufw-before-forward -d ${OPENCONNECT_NETWORK} -j ACCEPT\\
-### END ocserv forward rules" "$UFW_BEFORE_RULES"
-    fi
-    
-    if ! sudo grep -q "### BEGIN ocserv NAT rules" "$UFW_BEFORE_RULES"; then
-        sudo tee -a "$UFW_BEFORE_RULES" > /dev/null <<EOF
+# Настраиваем NAT правила
+setup_ufw_nat "$INTERFACE" "$OPENCONNECT_NETWORK"
 
-### BEGIN ocserv NAT rules
-*nat
-:POSTROUTING ACCEPT [0:0]
--A POSTROUTING -s ${OPENCONNECT_NETWORK} -o ${INTERFACE} -j MASQUERADE
-COMMIT
-### END ocserv NAT rules
-EOF
-    fi
+# Включаем ufw
+sudo ufw --force disable 2>/dev/null || true
+sudo ufw --force enable
+
+# Проверяем статус ufw
+if sudo ufw status | grep -q "Status: active"; then
+    print_success "UFW успешно настроен и активен"
+else
+    print_error "Проблема с UFW"
+    sudo ufw status
 fi
 
-sudo ufw --force enable
-sudo systemctl restart ufw
-
-# Включение IP forwarding
+# Включаем IP forwarding в sysctl.conf
 if ! sudo grep -q "^net.ipv4.ip_forward=1" /etc/sysctl.conf; then
     echo "net.ipv4.ip_forward=1" | sudo tee -a /etc/sysctl.conf
 fi
@@ -300,7 +295,13 @@ if sudo systemctl is-active --quiet ocserv; then
     print_success "ocserv успешно запущен"
 else
     print_error "Ошибка запуска ocserv"
+    echo ""
+    print_info "Логи ocserv:"
     sudo journalctl -u ocserv -n 20 --no-pager
+    echo ""
+    print_info "Проверьте конфигурацию:"
+    echo "  sudo nano $OCSERV_CONF"
+    echo "  sudo systemctl restart ocserv"
     exit 1
 fi
 
@@ -309,11 +310,13 @@ sudo systemctl enable --now certbot.timer
 sudo mkdir -p /etc/letsencrypt/renewal-hooks/deploy
 sudo tee /etc/letsencrypt/renewal-hooks/deploy/ocserv-restart.sh > /dev/null <<'EOF'
 #!/bin/bash
-cp /etc/letsencrypt/live/*/fullchain.pem /etc/ocserv/certs/server-cert.pem 2>/dev/null || true
-cp /etc/letsencrypt/live/*/privkey.pem /etc/ocserv/certs/server-key.pem 2>/dev/null || true
-chmod 640 /etc/ocserv/certs/server-key.pem
-chown root:ssl-cert /etc/ocserv/certs/server-key.pem
-systemctl restart ocserv
+if [ -f /etc/letsencrypt/live/*/fullchain.pem ]; then
+    cp /etc/letsencrypt/live/*/fullchain.pem /etc/ocserv/certs/server-cert.pem 2>/dev/null
+    cp /etc/letsencrypt/live/*/privkey.pem /etc/ocserv/certs/server-key.pem 2>/dev/null
+    chmod 640 /etc/ocserv/certs/server-key.pem
+    chown root:ssl-cert /etc/ocserv/certs/server-key.pem
+    systemctl restart ocserv
+fi
 EOF
 sudo chmod 755 /etc/letsencrypt/renewal-hooks/deploy/ocserv-restart.sh
 
@@ -322,7 +325,13 @@ clear
 print_success "Настройка OpenConnect завершена!"
 echo ""
 echo "==========================================="
-echo "Домен: $DOMAIN"
-echo "Порт: 443 (TCP/UDP)"
-echo "Адрес: https://$DOMAIN:443"
+echo "VPN сервер: https://${DOMAIN}:443"
+echo "Пользователь: ${VPN_USER:-не создан}"
+echo ""
+echo "Управление пользователями:"
+echo "  Добавить: sudo ocpasswd -c /etc/ocserv/ocserv.passwd ИМЯ"
+echo "  Удалить:  sudo ocpasswd -c /etc/ocserv/ocserv.passwd -d ИМЯ"
+echo ""
+echo "Статус: sudo systemctl status ocserv"
+echo "Логи:   sudo journalctl -u ocserv -f"
 echo "==========================================="

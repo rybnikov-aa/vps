@@ -42,7 +42,7 @@ prompt_secret() {
     fi
 }
 
-# Функция для замены или добавления параметра в ocserv.conf
+# Функция для замены или добавления параметра в ocserv.conf (без дублей)
 set_conf_param() {
     local param="$1"
     local value="$2"
@@ -59,13 +59,19 @@ set_conf_param() {
 
     local escaped_value=$(printf '%s\n' "$value" | sed -e 's/[\/&]/\\&/g')
 
-    if sudo grep -qE "^[[:space:]]*#?[[:space:]]*${param}[[:space:]]*(=)?[[:space:]]+" "$OCSERV_CONF"; then
-        sudo sed -i -E "s|^[[:space:]]*#?[[:space:]]*${param}[[:space:]]*(=)?[[:space:]]+.*|${param} = ${escaped_value}|" "$OCSERV_CONF"
-        print_info "✓ Параметр ${param} обновлен"
+    # Удаляем ВСЕ вхождения этого параметра (закомментированные и активные)
+    sudo sed -i -E "/^[[:space:]]*#?[[:space:]]*${param}[[:space:]]*(=)?/d" "$OCSERV_CONF"
+    
+    # Добавляем новый параметр в конец файла (перед секцией vhost если есть)
+    if sudo grep -q "^\[vhost:" "$OCSERV_CONF"; then
+        local insert_line=$(sudo grep -n "^\[vhost:" "$OCSERV_CONF" | head -1 | cut -d: -f1)
+        insert_line=$((insert_line - 1))
+        sudo sed -i "${insert_line} a ${param} = ${escaped_value}" "$OCSERV_CONF"
     else
         sudo bash -c "printf '%s = %s\n' \"${param}\" \"${escaped_value}\" >> \"$OCSERV_CONF\""
-        print_info "✓ Параметр ${param} добавлен"
     fi
+    
+    print_info "✓ Параметр ${param} установлен"
 }
 
 # Функция для правильной настройки UFW before.rules
@@ -195,6 +201,19 @@ sudo chmod 644 /etc/ocserv/certs/server-cert.pem
 sudo chmod 640 /etc/ocserv/certs/server-key.pem
 sudo chown root:ssl-cert /etc/ocserv/certs/server-key.pem
 
+# Проверка что файлы скопировались корректно
+if [ ! -f /etc/ocserv/certs/server-cert.pem ] || [ ! -s /etc/ocserv/certs/server-cert.pem ]; then
+    print_error "Сертификат не скопирован или пуст"
+    exit 1
+fi
+
+if [ ! -f /etc/ocserv/certs/server-key.pem ] || [ ! -s /etc/ocserv/certs/server-key.pem ]; then
+    print_error "Ключ сертификата не скопирован или пуст"
+    exit 1
+fi
+
+print_success "Сертификаты успешно установлены"
+
 # Убеждаемся что файл ocserv.conf существует
 if [ ! -f "$OCSERV_CONF" ]; then
     print_error "Файл $OCSERV_CONF не найден. Установите ocserv сначала."
@@ -203,6 +222,13 @@ fi
 
 # Настройка ocserv
 print_info "Настройка ocserv..."
+
+# Очистка старых параметров конфигурации
+print_info "Очистка старых параметров конфигурации..."
+sudo sed -i '/^[[:space:]]*auth[[:space:]]*=/d' "$OCSERV_CONF"
+sudo sed -i '/^[[:space:]]*route[[:space:]]*=/d' "$OCSERV_CONF"
+sudo sed -i '/^[[:space:]]*max-clients[[:space:]]*=/d' "$OCSERV_CONF"
+sudo sed -i '/^[[:space:]]*max-same-clients[[:space:]]*=/d' "$OCSERV_CONF"
 
 # Обновляем параметры
 set_conf_param "auth" "\"plain[passwd=${VPN_PASSWD_FILE}]\""
@@ -277,6 +303,8 @@ if [ -n "${VPN_USER}" ]; then
     printf '\n'
 
     if [ "${VPN_PASS}" = "${VPN_PASS_CONFIRM}" ] && [ -n "${VPN_PASS}" ]; then
+        # Создаем файл паролей если его нет
+        sudo touch "${VPN_PASSWD_FILE}"
         sudo bash -c "printf '%s\n%s\n' \"${VPN_PASS}\" \"${VPN_PASS}\" | ocpasswd -c '${VPN_PASSWD_FILE}' '${VPN_USER}'" && \
             print_success "Пользователь ${VPN_USER} создан"
     else
@@ -302,6 +330,15 @@ else
     print_info "Проверьте конфигурацию:"
     echo "  sudo nano $OCSERV_CONF"
     echo "  sudo systemctl restart ocserv"
+    
+    # Дополнительная диагностика
+    echo ""
+    print_info "Проверка наличия сертификатов:"
+    ls -la /etc/ocserv/certs/ 2>/dev/null || echo "Директория сертификатов не найдена"
+    echo ""
+    print_info "Проверка конфигурации ocserv:"
+    sudo ocserv -f -t -c "$OCSERV_CONF" 2>&1 || true
+    
     exit 1
 fi
 
@@ -313,8 +350,9 @@ sudo tee /etc/letsencrypt/renewal-hooks/deploy/ocserv-restart.sh > /dev/null <<E
 if [ -f /etc/letsencrypt/live/${DOMAIN}/fullchain.pem ]; then
     cp /etc/letsencrypt/live/${DOMAIN}/fullchain.pem /etc/ocserv/certs/server-cert.pem 2>/dev/null
     cp /etc/letsencrypt/live/${DOMAIN}/privkey.pem /etc/ocserv/certs/server-key.pem 2>/dev/null
-    chmod 640 /etc/ocserv/certs/server-key.pem
-    chown root:ssl-cert /etc/ocserv/certs/server-key.pem
+    chmod 644 /etc/ocserv/certs/server-cert.pem 2>/dev/null
+    chmod 640 /etc/ocserv/certs/server-key.pem 2>/dev/null
+    chown root:ssl-cert /etc/ocserv/certs/server-key.pem 2>/dev/null
     systemctl restart ocserv
 fi
 EOF

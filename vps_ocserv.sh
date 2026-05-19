@@ -308,11 +308,11 @@ fi
 # Автообновление сертификатов
 sudo systemctl enable --now certbot.timer
 sudo mkdir -p /etc/letsencrypt/renewal-hooks/deploy
-sudo tee /etc/letsencrypt/renewal-hooks/deploy/ocserv-restart.sh > /dev/null <<'EOF'
+sudo tee /etc/letsencrypt/renewal-hooks/deploy/ocserv-restart.sh > /dev/null <<EOF
 #!/bin/bash
-if [ -f /etc/letsencrypt/live/*/fullchain.pem ]; then
-    cp /etc/letsencrypt/live/*/fullchain.pem /etc/ocserv/certs/server-cert.pem 2>/dev/null
-    cp /etc/letsencrypt/live/*/privkey.pem /etc/ocserv/certs/server-key.pem 2>/dev/null
+if [ -f /etc/letsencrypt/live/${DOMAIN}/fullchain.pem ]; then
+    cp /etc/letsencrypt/live/${DOMAIN}/fullchain.pem /etc/ocserv/certs/server-cert.pem 2>/dev/null
+    cp /etc/letsencrypt/live/${DOMAIN}/privkey.pem /etc/ocserv/certs/server-key.pem 2>/dev/null
     chmod 640 /etc/ocserv/certs/server-key.pem
     chown root:ssl-cert /etc/ocserv/certs/server-key.pem
     systemctl restart ocserv

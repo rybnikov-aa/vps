@@ -108,9 +108,11 @@ setup_ufw_nat() {
     print_info "Создан бэкап ${backup_file}"
     
     # 1. Forward правила перед COMMIT в секции filter
-    if ! grep -qE "\-s $(echo ${network} | tr '.' '\.') -j ACCEPT" "$UFW_BEFORE_RULES"; then
-        awk -v n="${network}" '/^# allow forwarding for trusted network$/ {
+    if ! grep -qF -- "-s ${network} -j ACCEPT" "$UFW_BEFORE_RULES"; then
+        awk -v n="${network}" '/^# End required lines$/ {
             print $0
+            print ""
+            print "# allow forwarding for trusted network"
             print "-A ufw-before-forward -s " n " -j ACCEPT"
             print "-A ufw-before-forward -d " n " -j ACCEPT"
             next

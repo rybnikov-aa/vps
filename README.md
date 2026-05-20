@@ -32,22 +32,24 @@ bash <(curl -sSL https://raw.githubusercontent.com/rybnikov-aa/vps/main/vps_init
 bash <(curl -sSL https://raw.githubusercontent.com/rybnikov-aa/vps/main/vps_ocserv.sh)
 ```
 
-## Требования
+## 🔹 vps_init.sh
+
+### Требования
 
 - Debian/Ubuntu сервер
 - Доступ к root (или sudo с полными привилегиями)
 - Интернет соединение
 
-## Использование
+### Использование
 
-### 1. Скачивание скрипта
+#### 1. Скачивание скрипта
 
 ```bash
 wget https://your-repo-url/vps_init.sh
 chmod +x vps_init.sh
 ```
 
-### 2. Запуск скрипта
+#### 2. Запуск скрипта
 
 ```bash
 sudo ./vps_init.sh
@@ -55,13 +57,90 @@ sudo ./vps_init.sh
 
 **ВАЖНО:** Скрипт должен быть запущен от root!
 
-### 3. Интерактивный ввод
+#### 3. Интерактивный ввод
 
 Скрипт попросит вас ввести:
 - **Имя пользователя** (по умолчанию: `rybnikov`)
   - Допускаются только строчные латинские буквы, цифры, дефис и подчёркивание
   - Должно начинаться с буквы или _
-- **Пароль для root** (при первом запросе)
+
+## 🔹 vps_ocserv.sh
+
+### Возможности
+
+✅ Установка и настройка OpenConnect VPN (ocserv)  
+✅ Автоматическое получение SSL сертификата Let's Encrypt  
+✅ Регулярное автообновление сертификатов через certbot.timer  
+✅ Настройка UFW фаервола с NAT/MASQUERADE для VPN сети  
+✅ Включение IP forwarding (IPv4 и IPv6)  
+✅ Оптимизация сети: TCP BBR, qdisc fq  
+✅ Интерактивное создание VPN пользователей с паролем  
+✅ Управление пользователями ocserv
+
+### Описание скрипта
+
+Запускает полноценный OpenConnect VPN сервер с:
+
+1. **SSL сертификатами**
+   - Автоматическое получение через Certbot (HTTP-челлендж)
+   - Автоматическое обновление через deploy-хук
+   - Сертификаты хранятся в `/etc/ocserv/certs/`
+
+2. **Сетевая конфигурация**
+   - IP forwarding включён через sysctl
+   - UFW правила для NAT (MASQUERADE) из VPN-сети
+   - Forwarding для закрытой VPN сети
+   - Оптимизация: `net.core.default_qdisc = fq`, `net.ipv4.tcp_congestion_control = bbr`
+
+3. **VPN пользователи**
+   - Создают пароль в `/etc/ocserv/ocserv.passwd`
+   - Управление: `ocpasswd`, `sudo ocpasswd`
+
+### Использование
+
+#### 1. Скачивание скрипта
+
+```bash
+wget https://your-repo-url/vps_ocserv.sh
+chmod +x vps_ocserv.sh
+```
+
+#### 2. Запуск скрипта
+
+```bash
+sudo ./vps_ocserv.sh
+```
+
+#### 3. Интерактивный ввод
+
+Скрипт попросит вас ввести:
+- **Доменное имя** сервера (для SSL сертификата)
+- **Email** для Let's Encrypt
+- **Сеть OpenConnect** (по умолчанию `10.10.10.0/24`)
+- **Имя пользователя VPN**
+- **Пароль** (дважды для подтверждения)
+
+### После установки
+
+**Управление пользователями:**
+```bash
+# Добавить пользователя
+sudo ocpasswd -c /etc/ocserv/ocserv.passwd username
+
+# Удалить пользователя
+sudo ocpasswd -c /etc/ocserv/ocserv.passwd -d username
+```
+
+**Статус и логи:**
+```bash
+sudo systemctl status ocserv
+sudo journalctl -u ocserv -f
+```
+
+**Подключение клиента:**
+```bash
+openconnect https://your-domain:443 --user=username
+```
 
 ## Что изменяется на сервере
 

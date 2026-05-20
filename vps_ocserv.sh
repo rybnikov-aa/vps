@@ -65,7 +65,7 @@ cidr_to_network_and_mask() {
 
     IFS=. read -r o1 o2 o3 o4 <<< "$ip"
     for octet in "$o1" "$o2" "$o3" "$o4"; do
-        if [ "$octet" -gt 255 ] 2>/dev/null || [ "$octet" -lt 0 ] 2>/dev/null; then
+        if ! [[ "$octet" =~ ^[0-9]+$ ]] || [ "$octet" -gt 255 ]; then
             return 1
         fi
     done
@@ -102,47 +102,28 @@ setup_ufw_nat() {
         return 1
     fi
     
-    # Создаем бэкап
-    if [ ! -f "${UFW_BEFORE_RULES}.bak" ]; then
-        sudo cp "$UFW_BEFORE_RULES" "${UFW_BEFORE_RULES}.bak"
-        print_info "Создан бэкап ${UFW_BEFORE_RULES}.bak"
+    # Создаем бэкап перед каждой модификацией
+    local backup_file="${UFW_BEFORE_RULES}.bak.$(date +%Y%m%d%H%M%S)"
+    sudo cp "$UFW_BEFORE_RULES" "$backup_file"
+    print_info "Создан бэкап ${backup_file}"
+    
+    # 1. Forward правила перед COMMIT в секции filter
+    if ! grep -qE "\-s $(echo ${network} | tr '.' '\.') -j ACCEPT" "$UFW_BEFORE_RULES"; then
+        awk -v n="${network}" '/^# allow forwarding for trusted network$/ {
+            print $0
+            print "-A ufw-before-forward -s " n " -j ACCEPT"
+            print "-A ufw-before-forward -d " n " -j ACCEPT"
+            next
+        } {print}' "$UFW_BEFORE_RULES" > "${UFW_BEFORE_RULES}.tmp"
+        sudo mv "${UFW_BEFORE_RULES}.tmp" "$UFW_BEFORE_RULES"
+        print_info "Forward rules добавлены в ${UFW_BEFORE_RULES}"
     fi
-    
-    # Удаляем предыдущие добавленные правила если они есть
-    sudo sed -i '/### BEGIN ocserv forward rules/,/### END ocserv forward rules/d' "$UFW_BEFORE_RULES"
-    sudo sed -i '/### BEGIN ocserv NAT rules/,/### END ocserv NAT rules/d' "$UFW_BEFORE_RULES"
-    
-    # Создаем временный файл с правильной структурой
-    local temp_file=$(mktemp)
-    
-    # Копируем содержимое до первого COMMIT (секция filter)
-    sudo awk '/^COMMIT$/ {exit} {print}' "$UFW_BEFORE_RULES" > "$temp_file"
-    
-    # Добавляем forward rules перед COMMIT
-    cat >> "$temp_file" << EOF
 
-### BEGIN ocserv forward rules
--A ufw-before-forward -s ${network} -j ACCEPT
--A ufw-before-forward -d ${network} -j ACCEPT
-### END ocserv forward rules
-
-COMMIT
-EOF
-    
-    # Добавляем секцию nat ПОСЛЕ filter (как требует UFW)
-    cat >> "$temp_file" << EOF
-
-### BEGIN ocserv NAT rules
-*nat
-:POSTROUTING ACCEPT [0:0]
--A POSTROUTING -s ${network} -o ${interface} -j MASQUERADE
-COMMIT
-### END ocserv NAT rules
-EOF
-    
-    # Копируем обратно
-    sudo cp "$temp_file" "$UFW_BEFORE_RULES"
-    rm -f "$temp_file"
+    # 2. Блок NAT в конец файла через echo
+    if ! grep -q 'ocserv MASQUERADE' "$UFW_BEFORE_RULES"; then
+        echo -e "\n*nat\n:POSTROUTING ACCEPT [0:0]\n-A POSTROUTING -s ${network} -o ${interface} -j MASQUERADE\nCOMMIT" >> "$UFW_BEFORE_RULES"
+        print_info "NAT rules добавлены в ${UFW_BEFORE_RULES}"
+    fi
     
     print_info "✓ Правила UFW настроены корректно"
 }
@@ -168,7 +149,7 @@ fi
 
 DOMAIN="$(printf '%s' "${DOMAIN}" | tr -d '\r' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' | tr '[:upper:]' '[:lower:]')"
 
-if ! [[ "${DOMAIN}" =~ ^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$ ]]; then
+if ! [[ "${DOMAIN}" =~ ^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$ ]]; then
     print_error "Недопустимое доменное имя"
     exit 1
 fi
@@ -214,11 +195,9 @@ fi
 
 # Определение директории с сертификатами
 LIVE_DIR="/etc/letsencrypt/live/${DOMAIN}"
-if ! sudo test -f "${LIVE_DIR}/fullchain.pem"; then
-    CERT_NAME=$(sudo certbot certificates 2>/dev/null | grep -A1 "Certificate Name" | tail -1 | tr -d ' ')
-    if [ -n "${CERT_NAME}" ] && [ -d "/etc/letsencrypt/live/${CERT_NAME}" ]; then
-        LIVE_DIR="/etc/letsencrypt/live/${CERT_NAME}"
-    fi
+if ! sudo test -f "${LIVE_DIR}/fullchain.pem" || ! sudo test -f "${LIVE_DIR}/privkey.pem"; then
+    print_error "Сертификат или ключ для домена ${DOMAIN} не найден"
+    exit 1
 fi
 
 # Копирование сертификатов

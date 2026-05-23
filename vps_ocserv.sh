@@ -287,11 +287,6 @@ else
     sudo ufw status
 fi
 
-# Включаем IP forwarding в sysctl.conf
-if ! sudo grep -q "^net.ipv4.ip_forward=1" /etc/sysctl.conf; then
-    echo "net.ipv4.ip_forward=1" | sudo tee -a /etc/sysctl.conf
-fi
-
 # Создание пользователя
 print_info "Создание пользователя VPN..."
 prompt "Введите имя пользователя VPN: " VPN_USER

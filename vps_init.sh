@@ -185,7 +185,7 @@ log_info "Добавляем публичные ключи в authorized_keys"
 
 cat > /home/$USERNAME/.ssh/authorized_keys << 'EOF'
 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIH38aA2983gNAjYy6JEK35bZivTkMlDOBZfF/ECF7dIb alex@NEXUS
-ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGBW9nJD5WGxPqspliMrMS4Oi9jjldF4uqm7SI+S0s/H alex@BOOK4PRO
+ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHoew2zs81jhqm9f/GcFvw3GWW0zwixp6oEOyqCwNmI2 alex@BOOK4PRO
 EOF
 
 # Устанавливаем правильные права

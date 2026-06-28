@@ -109,7 +109,7 @@ setup_ufw_nat() {
     
     # 1. Forward правила перед COMMIT в секции filter
     if ! grep -qF -- "-s ${network} -j ACCEPT" "$UFW_BEFORE_RULES"; then
-        awk -v n="${network}" '/^# End required lines$/ {
+        sudo awk -v n="${network}" '/^# End required lines$/ {
             print $0
             print ""
             print "# allow forwarding for trusted network"

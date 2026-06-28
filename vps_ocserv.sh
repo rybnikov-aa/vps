@@ -108,7 +108,7 @@ setup_ufw_nat() {
     print_info "Создан бэкап ${backup_file}"
     
     # 1. Forward правила перед COMMIT в секции filter
-    if ! grep -qF -- "-s ${network} -j ACCEPT" "$UFW_BEFORE_RULES"; then
+    if ! sudo grep -qF -- "-s ${network} -j ACCEPT" "$UFW_BEFORE_RULES"; then
         sudo awk -v n="${network}" '/^# End required lines$/ {
             print $0
             print ""
@@ -116,14 +116,14 @@ setup_ufw_nat() {
             print "-A ufw-before-forward -s " n " -j ACCEPT"
             print "-A ufw-before-forward -d " n " -j ACCEPT"
             next
-        } {print}' "$UFW_BEFORE_RULES" > "${UFW_BEFORE_RULES}.tmp"
+        } {print}' "$UFW_BEFORE_RULES" | sudo tee "${UFW_BEFORE_RULES}.tmp" > /dev/null
         sudo mv "${UFW_BEFORE_RULES}.tmp" "$UFW_BEFORE_RULES"
         print_info "Forward rules добавлены в ${UFW_BEFORE_RULES}"
     fi
 
     # 2. Блок NAT в конец файла через echo
-    if ! grep -q 'ocserv MASQUERADE' "$UFW_BEFORE_RULES"; then
-        echo -e "\n*nat\n:POSTROUTING ACCEPT [0:0]\n-A POSTROUTING -s ${network} -o ${interface} -j MASQUERADE\nCOMMIT" >> "$UFW_BEFORE_RULES"
+    if ! sudo grep -q 'ocserv MASQUERADE' "$UFW_BEFORE_RULES"; then
+        echo -e "\n*nat\n:POSTROUTING ACCEPT [0:0]\n-A POSTROUTING -s ${network} -o ${interface} -j MASQUERADE\nCOMMIT" | sudo tee -a "$UFW_BEFORE_RULES" > /dev/null
         print_info "NAT rules добавлены в ${UFW_BEFORE_RULES}"
     fi
     

@@ -5,6 +5,7 @@
 - **`vps_init.sh`** — начальная настройка сервера и безопасность SSH
 - **`vps_ocserv.sh`** — развёртывание OpenConnect VPN сервера
 - **`vps_nginx.sh`** — хостинг статических сайтов (Nginx + SSL)
+- **`vps_nodejs.sh`** — установка Node.js и pm2 для бэкенд-приложений
 
 ## Возможности
 
@@ -40,6 +41,12 @@ bash <(curl -sSL https://raw.githubusercontent.com/rybnikov-aa/vps/main/vps_ocse
 
 ```bash
 bash <(curl -sSL https://raw.githubusercontent.com/rybnikov-aa/vps/main/vps_nginx.sh)
+```
+
+Для быстрого запуска скрипта `vps_nodejs.sh` используйте:
+
+```bash
+bash <(curl -sSL https://raw.githubusercontent.com/rybnikov-aa/vps/main/vps_nodejs.sh)
 ```
 
 ## 🔹 vps_init.sh
@@ -229,6 +236,69 @@ sudo certbot renew
 - Скрипт автоматически определяет порт SSH из `/etc/ssh/sshd_config`
 - Проверить правила: `sudo ufw status`
 
+## 🔹 vps_nodejs.sh
+
+Скрипт для установки Node.js и менеджера процессов pm2 на чистый VPS (Ubuntu/Debian). Предназначен для бэкенда семейного сайта `family.rybnikov.su`.
+
+### Возможности
+
+✅ Установка базовых пакетов: `curl`, `ca-certificates`, `gnupg`, `git`, `build-essential`, `python3`, `make`, `g++`, `unzip` (нужны для компиляции нативных модулей node-gyp)  
+✅ Установка Node.js 24 LTS из официального репозитория NodeSource (системная, не через nvm)  
+✅ Переопределение версии Node.js через переменную окружения `NODE_MAJOR`  
+✅ Установка pm2 глобально (менеджер процессов для запуска бэкенда)  
+✅ Вывод установленных версий и дальнейших шагов
+
+### Требования
+
+- Debian/Ubuntu сервер
+- Доступ к root (или sudo с полными привилегиями)
+- Интернет соединение
+
+### Использование
+
+#### 1. Скачивание скрипта
+
+```bash
+wget https://your-repo-url/vps_nodejs.sh
+chmod +x vps_nodejs.sh
+```
+
+#### 2. Запуск скрипта
+
+```bash
+sudo bash vps_nodejs.sh
+```
+
+**ВАЖНО:** Скрипт должен быть запущен от root!
+
+#### 3. Переопределение версии Node.js (опционально)
+
+По умолчанию устанавливается Node.js 24 LTS. Для другой версии (проект требует ≥ 20.19.0):
+
+```bash
+NODE_MAJOR=22 sudo bash vps_nodejs.sh
+```
+
+### После установки
+
+**Клонирование и деплой проекта:**
+```bash
+git clone <repo-url> family && cd family
+npm run deploy   # зальёт фронтенд/бэкенд и перезапустит pm2
+```
+
+**Управление бэкендом через pm2:**
+```bash
+pm2 status
+pm2 logs family-backend
+pm2 restart family-backend
+```
+
+**Настройка Nginx:** используйте шаблон `family.rybnikov.su.example`, затем примените конфиг:
+```bash
+nginx -t && systemctl reload nginx
+```
+
 ## Что изменяется на сервере
 
 ### Системные изменения
@@ -282,6 +352,17 @@ sudo certbot renew
 9. **Брандмауэр (UFW)**
    - Разрешено: `{SSH_PORT}/tcp`, `80/tcp`, `443/tcp`
    - Порт SSH определяется автоматически из `/etc/ssh/sshd_config`
+
+### Изменения от vps_nodejs.sh
+
+10. **Node.js**
+    - Системная установка Node.js 24 LTS из репозитория NodeSource (не через nvm)
+    - Ключ репозитория: `/etc/apt/keyrings/nodesource.gpg`
+    - Источник: `/etc/apt/sources.list.d/nodesource.list`
+
+11. **pm2**
+    - Устанавливается глобально через npm
+    - Бэкенд запускается: `pm2 start dist/app.cjs --name family-backend`
 
 ## Важные замечания
 
@@ -376,6 +457,8 @@ sudo ./vps_init.sh
 - **Файлы сайта:** `/var/www/{SITE}/public_html`
 - **Сертификаты SSL:** `/etc/letsencrypt/live/{SITE}/`
 - **Логи Nginx:** `/var/log/nginx/`
+- **Node.js / npm:** системная установка из репозитория NodeSource
+- **pm2:** устанавливается глобально, бэкенд `family-backend`
 
 ## Лицензия
 

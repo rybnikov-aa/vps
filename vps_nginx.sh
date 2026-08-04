@@ -209,9 +209,13 @@ if certbot --nginx -d "$SITE_NAME" --non-interactive --agree-tos --email "$SSL_E
     BACKEND_LOCATION=""
     if [ -n "$BACKEND_ADDR" ]; then
         print_status "Добавляю проксирование /api/ → http://$BACKEND_ADDR"
+        # ВАЖНО: в proxy_pass НЕ должно быть трейлинг-слэша.
+        # Со слэшем (proxy_pass http://127.0.0.1:3000/;) nginx заменяет совпавший
+        # префикс /api/ на /, и /api/health уходит на бэкенд как /health → 404.
+        # Без слэша путь передаётся на бэкенд полностью (/api/health → /api/health).
         BACKEND_LOCATION="
     location /api/ {
-        proxy_pass http://$BACKEND_ADDR/;
+        proxy_pass http://$BACKEND_ADDR;
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;

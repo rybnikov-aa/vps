@@ -98,7 +98,7 @@ fi
 print_status "Обновление системы..."
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
-apt-get -y -o Dpkg::Options::="--force-confold" --force-confdef upgrade
+apt-get -y -o Dpkg::Options::="--force-confold" -o Dpkg::Options::="--force-confdef" upgrade
 apt-get install -y curl wget git ufw
 
 # ======================================================

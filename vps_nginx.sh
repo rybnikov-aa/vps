@@ -69,11 +69,19 @@ if [ -z "$SSL_EMAIL" ]; then
     SSL_EMAIL="admin@$SITE_NAME"
 fi
 
+# Запрос адреса бэкенда для /api/ (необязательно)
+read -p "Бэкенд для /api/ (адрес:порт, например 127.0.0.1:3000; пусто — без бэкенда): " BACKEND_ADDR
+
 echo ""
 echo "======================================================"
 echo "Параметры настройки:"
 echo "  - Сайт: $SITE_NAME"
 echo "  - Email для SSL: $SSL_EMAIL"
+if [ -n "$BACKEND_ADDR" ]; then
+    echo "  - Бэкенд /api/: http://$BACKEND_ADDR"
+else
+    echo "  - Бэкенд /api/: не настроен"
+fi
 echo "======================================================"
 echo ""
 
@@ -197,6 +205,21 @@ if certbot --nginx -d "$SITE_NAME" --non-interactive --agree-tos --email "$SSL_E
     # Перезаписываем конфигурацию сайта на HTTPS (HTTP → HTTPS редирект)
     print_status "Настройка HTTPS-конфигурации для $SITE_NAME..."
 
+    # Блок проксирования /api/ на бэкенд (если адрес указан)
+    BACKEND_LOCATION=""
+    if [ -n "$BACKEND_ADDR" ]; then
+        print_status "Добавляю проксирование /api/ → http://$BACKEND_ADDR"
+        BACKEND_LOCATION="
+    location /api/ {
+        proxy_pass http://$BACKEND_ADDR/;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+"
+    fi
+
     cat > "/etc/nginx/sites-available/$SITE_NAME" << EOF
 server {
     listen 80;
@@ -218,7 +241,7 @@ server {
     location / {
         try_files \$uri \$uri/ =404;
     }
-
+$BACKEND_LOCATION
     access_log /var/log/nginx/${SITE_NAME}_access.log;
     error_log /var/log/nginx/${SITE_NAME}_error.log;
 }
@@ -318,6 +341,9 @@ echo "📌 ИНФОРМАЦИЯ О САЙТЕ:"
 echo ""
 echo "   Сайт: https://$SITE_NAME/"
 echo "   Корневая директория: $WEB_ROOT/public_html"
+if [ -n "$BACKEND_ADDR" ]; then
+    echo "   Бэкенд (/api/): http://$BACKEND_ADDR"
+fi
 echo ""
 echo "📁 ДЛЯ РАЗМЕЩЕНИЯ ФАЙЛОВ:"
 echo ""

@@ -1,6 +1,10 @@
-# VPS Init Script
+# VPS Scripts
 
-Автоматизированный скрипт для начальной настройки Debian сервера с фокусом на безопасность и удобство управления.
+Набор скриптов для настройки Debian/Ubuntu VPS сервера:
+
+- **`vps_init.sh`** — начальная настройка сервера и безопасность SSH
+- **`vps_ocserv.sh`** — развёртывание OpenConnect VPN сервера
+- **`vps_nginx.sh`** — хостинг статических сайтов (Nginx + SSL)
 
 ## Возможности
 
@@ -30,6 +34,12 @@ bash <(curl -sSL https://raw.githubusercontent.com/rybnikov-aa/vps/main/vps_init
 
 ```bash
 bash <(curl -sSL https://raw.githubusercontent.com/rybnikov-aa/vps/main/vps_ocserv.sh)
+```
+
+Для быстрого запуска скрипта `vps_nginx.sh` используйте:
+
+```bash
+bash <(curl -sSL https://raw.githubusercontent.com/rybnikov-aa/vps/main/vps_nginx.sh)
 ```
 
 ## 🔹 vps_init.sh
@@ -142,6 +152,81 @@ sudo journalctl -u ocserv -f
 openconnect https://your-domain:443 --user=username
 ```
 
+## 🔹 vps_nginx.sh
+
+Скрипт для быстрого развёртывания хостинга статических сайтов: Nginx + SSL (Let's Encrypt) + брандмауэр.
+
+### Возможности
+
+✅ Установка и настройка Nginx  
+✅ Автоматическое получение SSL сертификата Let's Encrypt (`certbot --nginx`)  
+✅ Автообновление сертификатов через `certbot.timer`  
+✅ Настройка UFW фаервола с автоопределением порта SSH  
+✅ Создание отдельного деплой-пользователя для загрузки файлов (без root)  
+✅ Создание структуры и прав для `/var/www/{SITE}/public_html`  
+✅ Создание тестовой страницы  
+✅ Проверка работоспособности после установки  
+
+### Требования
+
+- Debian/Ubuntu сервер
+- Доступ к root (или sudo)
+- Домен должен указывать (DNS A-запись) на IP этого сервера — иначе SSL-сертификат не выдастся
+- Интернет соединение
+
+### Использование
+
+#### 1. Скачивание скрипта
+
+```bash
+wget https://your-repo-url/vps_nginx.sh
+chmod +x vps_nginx.sh
+```
+
+#### 2. Запуск скрипта
+
+```bash
+sudo ./vps_nginx.sh
+```
+
+**ВАЖНО:** Скрипт должен быть запущен от root!
+
+#### 3. Интерактивный ввод
+
+Скрипт попросит вас ввести:
+- **Имя сайта** (домен, например `example.com`)
+- **Email** для Let's Encrypt (по умолчанию `admin@{домен}`)
+- Подтверждение начала настройки
+
+### После установки
+
+**Размещение файлов сайта:**
+```bash
+scp -r /путь/к/файлам/* rybnikov@{SITE}:/var/www/{SITE}/public_html/
+```
+
+**Управление Nginx:**
+```bash
+sudo systemctl status nginx
+sudo systemctl reload nginx
+tail -f /var/log/nginx/{SITE}_error.log
+```
+
+**Обновление сертификатов вручную:**
+```bash
+sudo certbot renew
+```
+
+### Устранение проблем
+
+**SSL-сертификат не установился:**
+- Проверьте, что DNS A-запись домена указывает на IP сервера
+- Дождитесь обновления DNS и запустите: `sudo certbot --nginx -d {SITE} --redirect`
+
+**Пропал доступ по SSH после включения UFW:**
+- Скрипт автоматически определяет порт SSH из `/etc/ssh/sshd_config`
+- Проверить правила: `sudo ufw status`
+
 ## Что изменяется на сервере
 
 ### Системные изменения
@@ -169,6 +254,31 @@ openconnect https://your-domain:443 --user=username
    - Директория `/home/{USERNAME}/.ssh` с правами 700
    - Файл `authorized_keys` с правами 600
    - Добавляются предконфигурированные публичные ключи
+
+### Изменения от vps_nginx.sh
+
+5. **Деплой-пользователь**
+   - Создаётся пользователь `rybnikov` (если ещё нет) и добавляется в группу `www-data`
+   - Файлы загружаются через SSH без прав root
+
+6. **Структура сайта**
+   - Корневая директория: `/var/www/{SITE}/public_html`
+   - Владелец: деплой-пользователь `rybnikov`, группа `www-data`
+
+7. **Nginx**
+   - Конфиг сайта: `/etc/nginx/sites-available/{SITE}`
+   - Дефолтный сайт отключается
+   - После получения сертификата конфигурация перезаписывается на HTTPS:
+     - HTTP → HTTPS редирект (301) на `listen 80`
+     - HTTPS-сервер на `listen 443 ssl http2` с сертификатами Let's Encrypt
+
+8. **SSL**
+   - Сертификаты: `/etc/letsencrypt/live/{SITE}/`
+   - Автообновление: `certbot.timer`
+
+9. **Брандмауэр (UFW)**
+   - Разрешено: `{SSH_PORT}/tcp`, `80/tcp`, `443/tcp`
+   - Порт SSH определяется автоматически из `/etc/ssh/sshd_config`
 
 ## Важные замечания
 
@@ -259,6 +369,10 @@ sudo ./vps_init.sh
 - **SSH ключи пользователя:** `/home/{USERNAME}/.ssh/`
 - **Sudoers конфиг:** `/etc/sudoers.d/{USERNAME}`
 - **Системные логи:** `journalctl -u ssh`
+- **Конфигурация сайта:** `/etc/nginx/sites-available/{SITE}`
+- **Файлы сайта:** `/var/www/{SITE}/public_html`
+- **Сертификаты SSL:** `/etc/letsencrypt/live/{SITE}/`
+- **Логи Nginx:** `/var/log/nginx/`
 
 ## Лицензия
 
